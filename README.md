@@ -1,12 +1,6 @@
 # LeRobotHackathonEnv
 Minimal, extendable LeRobot gym environment.
 
-## Idea
-The idea of the Autonomous Learning hackathon is to collect expert trajectories in sim and transfer with generative models akin to the following:
-
-![transfer](assets/nano_banana_transfer.png)
-
-
 ## Installation
 
 ```bash
@@ -23,7 +17,7 @@ Run `uv run [test/mj_viewer_rendering.py](test/mj_viewer_rendering.py)` and `uv 
 See [`tests/`](tests/)
 
 ## StdTask
-The [`tasks.py`](src/lerobothackathonenv/tasks.py) script defines one particular instance of the environment. I provide one standard implementation `StdTask`.
+The [`tasks.py`](src/lerobothackathonenv/tasks.py) script defines one particular instance of the environment with one set of observations and a particular reward function. One template implementation "`StdTask`" is provided.
 
 ### Observation Space
 The environment provides observations as a dictionary containing:
@@ -70,6 +64,14 @@ uv run pytest
 
 ## Robot Model
 The robot model used is the SO-101 from TheRobotStudio (originally designed in collaboration with Hugging Face). The motor presets are for the STS3215 servo motor model.
+
+## Nano banana 3 style transfer test
+**Prompt:** *Please generate this robot in a realistic scene for sim to real transfer*
+
+**Result:**
+![style transfer](assets/nano_banana_transfer.png)
+
+On the top are the input and output images and in the bottom I overlayed both images with 50% opacity. One can see that the geometry is preserved perfectly.
 
 ## Acknowledgments
 The xml files are taken from: https://github.com/TheRobotStudio/SO-ARM100.git
