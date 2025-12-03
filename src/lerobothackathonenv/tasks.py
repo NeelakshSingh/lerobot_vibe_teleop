@@ -104,7 +104,7 @@ class GoalConditionedObjectPlaceTask(ExampleTask):
     TABLE_HEIGHT = 0.6
     RANGE_TARGET_POS = (-0.4, 0.4)
     # ~ Body ids of objects to be manipulated
-    MANIPULATEBABLES: List[int] = [
+    MANIPULATABLES: List[int] = [
         9, # milk_0
         11, # bread_1
         13 # cereal_2
@@ -116,7 +116,7 @@ class GoalConditionedObjectPlaceTask(ExampleTask):
             actuator_force=spaces.Box(*ExampleTask.RANGE_AF, shape=(6,), dtype=float64),
             gripper_pos=spaces.Box(*ExampleTask.RANGE_GRIPPER, shape=(3,), dtype=float64),
             target_pos=spaces.Box(*RANGE_TARGET_POS, shape=(3,), dtype=float64),
-            object_index=spaces.Box(0, 1, shape=(len(MANIPULATEBABLES), ), dtype=float64)
+            object_index=spaces.Box(0, 1, shape=(len(MANIPULATABLES), ), dtype=float64)
         )
     )
 
@@ -130,7 +130,7 @@ class GoalConditionedObjectPlaceTask(ExampleTask):
         z = self.TABLE_HEIGHT + self.DELTA
         self.target_pos = array([x, y, z])
         self.focus_object = np.random.randint(
-            len(self.MANIPULATEBABLES)
+            len(self.MANIPULATABLES)
         )
 
     def get_reward(
@@ -138,7 +138,7 @@ class GoalConditionedObjectPlaceTask(ExampleTask):
         physics: Physics
     ) -> float:
         data = physics.data
-        object_pos = data.xpos[self.MANIPULATEBABLES[self.focus_object]]
+        object_pos = data.xpos[self.MANIPULATABLES[self.focus_object]]
         print(object_pos)
         cost = norm(object_pos - self.target_pos)
         return -float(cost)
@@ -171,7 +171,7 @@ class GoalConditionedObjectPlaceTask(ExampleTask):
             target_pos=self.target_pos.copy(),
             object_index=self.one_hot(
                 self.focus_object,
-                len(self.MANIPULATEBABLES)
+                len(self.MANIPULATABLES)
             )
         )
         return obs
