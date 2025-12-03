@@ -1,9 +1,11 @@
 # LeRobotHackathonEnv
 Minimal, extendable LeRobot gym environment.
 
+![env](assets/env.png)
+
 ## Installation
 
-**From Source:**  
+**From source:**  
 ```bash
 git clone https://github.com/uakel/LeRobotHackathonEnv.git
 cd LeRobotHackathonEnv
