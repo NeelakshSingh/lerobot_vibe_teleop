@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.10, <3.13"
 dependencies = [
     "dm-control>=1.0.34",
-    "gymnasium>=1.2.2",
+    "gymnasium==0.29.1",
     "mujoco>=3.3.7",
+    "pufferlib==3.0.0",
+    "gym==0.23"
 ]
 
 [dependency-groups]

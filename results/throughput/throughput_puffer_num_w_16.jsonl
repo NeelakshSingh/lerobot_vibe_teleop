@@ -1,0 +1,5 @@
+{"env_id": "LeRobot-v0", "backend": "puffer", "num_envs": 2, "num_workers": 2, "steps_per_second": 28896.288760504234}
+{"env_id": "LeRobot-v0", "backend": "puffer", "num_envs": 4, "num_workers": 4, "steps_per_second": 48588.48179645265}
+{"env_id": "LeRobot-v0", "backend": "puffer", "num_envs": 8, "num_workers": 8, "steps_per_second": 48208.29845362114}
+{"env_id": "LeRobot-v0", "backend": "puffer", "num_envs": 16, "num_workers": 16, "steps_per_second": 43263.94491399201}
+{"env_id": "LeRobot-v0", "backend": "puffer", "num_envs": 32, "num_workers": 16, "steps_per_second": 53051.26709535072}

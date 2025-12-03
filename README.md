@@ -99,3 +99,56 @@ If a policy has been trained and is now ready for execution, at some point we wa
 - [SO-101 Robot Repository](https://github.com/TheRobotStudio/SO-ARM100)
 - [Onurs/Georgs MPC repository](https://github.com/martius-lab/mpcjoco)
 
+## Vectorized throughput: Gym vs PufferLib
+
+We benchmarked vectorized rollouts of `LeRobot-v0` using Gymnasium's `AsyncVectorEnv` (`gym` backend) and PufferLib's multiprocessing vectorization (`puffer` backend) for `num_envs = 2, 4, 8, 16, 32`.
+
+- Gym AsyncVectorEnv: peaks around ~28k steps/s on this machine.
+- PufferLib Multiprocessing: best result so far is ~60k steps/s at `num_envs=16, num_workers=8` (per `results/throughput/throughput_puffer_num_w_8.jsonl`).
+
+![Gym throughput](results/throughput/throughput_gym.png)
+![PufferLib throughput](results/throughput/throughput_puffer_num_w_8.png)
+
+To reproduce the sweeps and plots:
+
+```bash
+uv run python -m tests.vec_env_throughput --backend gym \
+  --sweep-num-envs 2,4,8,16,32 --plot-path results/throughput
+
+uv run python -m tests.vec_env_throughput --backend puffer \
+  --sweep-num-envs 2,4,8,16,32 --puffer-num-workers 8 --plot-path results/throughput
+
+# To sweep over different PufferLib worker counts and get one PNG/JSONL per setting:
+uv run python -m tests.vec_env_throughput --backend puffer \
+  --sweep-num-envs 2,4,8,16,32 --puffer-num-workers 2,4,8,16 --plot-path results/throughput
+```
+
+### Minimal PufferLib vector env snippet
+
+```python
+import gymnasium as gym
+import pufferlib
+import pufferlib.vector as pv
+from pufferlib.emulation import GymnasiumPufferEnv
+
+import lerobothackathonenv  # registers LeRobot-v0
+
+num_envs = 16
+
+vec_env = pv.make(
+    GymnasiumPufferEnv,
+    env_args=None,
+    env_kwargs={"env_creator": gym.make, "env_args": ["LeRobot-v0"]},
+    backend=pv.Multiprocessing,
+    num_envs=num_envs,
+    num_workers=8,  # best worker setting from the benchmark
+    batch_size=num_envs,
+)
+
+obs, info = vec_env.reset()
+for _ in range(1000):
+    actions = vec_env.action_space.sample()
+    obs, rewards, terminated, truncated, infos = vec_env.step(actions)
+
+vec_env.close()
+```
