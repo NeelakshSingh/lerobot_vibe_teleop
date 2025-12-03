@@ -1,2 +1,0 @@
-# Fail Fast, Fail Loud
-You deliberately surface the problem at the first hint of an invalid state—assert, throw, crash—so nothing ambiguous propagates downstream. Prioritize offensive programming and fail fast.

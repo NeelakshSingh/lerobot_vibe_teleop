@@ -1,5 +1,6 @@
 <?xml version="1.0" ?>
 <mujoco model="so101_tabletop_manipulation">
+  <option timestep="0.0016666666666666667"/>
   <compiler angle="radian" meshdir="../meshes" texturedir="../textures" autolimits="true"/>
   
   <include file="arenas/table_arena.xml"/>
