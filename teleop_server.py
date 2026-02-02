@@ -2,9 +2,9 @@
 iPhone teleoperation server for the SO-101 arm.
 
 Runs an async WebSocket server on 0.0.0.0:8765.  Receives phone
-orientation (quaternion) + grasp state, converts tilt into end-effector
-velocity, integrates into a target position, solves IK, and steps the
-MuJoCo simulation with a live viewer.
+orientation (quaternion) + grasp state, converts tilt directly into
+end-effector velocity, solves velocity IK via the Jacobian, and steps
+the MuJoCo simulation with a live viewer.
 
 Usage
 -----
@@ -23,7 +23,7 @@ from scipy.spatial.transform import Rotation
 
 import lerobothackathonenv as _  # noqa: F401 — triggers env registration
 from lerobothackathonenv.env import LeRobot
-from teleop_ik import solve_ik
+from teleop_ik import solve_velocity_ik
 
 try:
     import websockets
@@ -49,6 +49,9 @@ DEADZONE_RAD = np.radians(DEADZONE_DEG)
 WS_LO = np.array([-0.10, -0.30, 0.62])
 WS_HI = np.array([0.40,   0.30, 1.00])
 
+# Margin for workspace edge velocity damping (metres).
+WS_EDGE_MARGIN = 0.02
+
 # Gripper actuator targets (radians, from XML ctrlrange).
 GRIPPER_OPEN = 1.5
 GRIPPER_CLOSED = -0.15
@@ -57,14 +60,15 @@ GRIPPER_CLOSED = -0.15
 # ── Teleop state ─────────────────────────────────────────────────────────
 
 class TeleopState:
-    """Tracks phone orientation and computes EE target position."""
+    """Tracks phone orientation and computes EE velocity."""
 
-    def __init__(self, initial_ee_pos: np.ndarray):
-        self.ee_target = initial_ee_pos.copy()
+    def __init__(self):
+        self.ee_velocity = np.zeros(3)
         self.ref_rot: Rotation | None = None
         self.grasp = False
         self.connected = False
         self.last_update = 0.0
+        self.home_requested = False
 
     def calibrate(self, quat_wxyz: np.ndarray):
         """Store current phone orientation as the neutral reference."""
@@ -73,7 +77,7 @@ class TeleopState:
             [quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]]
         )
 
-    def update(self, quat_wxyz: np.ndarray, grasp: bool, dt: float):
+    def update(self, quat_wxyz: np.ndarray, grasp: bool):
         """Process a new phone IMU reading."""
         self.grasp = grasp
         self.connected = True
@@ -101,19 +105,32 @@ class TeleopState:
         #   pitch (tilt forward/back) → +X  (forward on table)
         #   roll  (tilt left/right)   → +Y  (left on table)
         #   yaw   (twist)             → +Z  (up/down)
-        vx = pitch * VELOCITY_SCALE
-        vy = roll * VELOCITY_SCALE
-        vz = yaw * VELOCITY_SCALE
+        self.ee_velocity = np.array([
+            pitch * VELOCITY_SCALE,
+            roll * VELOCITY_SCALE,
+            yaw * VELOCITY_SCALE,
+        ])
 
-        # Integrate.
-        self.ee_target += np.array([vx, vy, vz]) * dt
-        self.ee_target = np.clip(self.ee_target, WS_LO, WS_HI)
+    def request_home(self):
+        """Flag that a home reset was requested."""
+        self.home_requested = True
 
 
 def _deadzone(value: float, zone: float) -> float:
     if abs(value) < zone:
         return 0.0
     return value - np.sign(value) * zone
+
+
+def _clamp_velocity_at_edges(ee_pos: np.ndarray, velocity: np.ndarray) -> np.ndarray:
+    """Zero out velocity components that would push EE beyond workspace bounds."""
+    vel = velocity.copy()
+    for i in range(3):
+        if ee_pos[i] <= WS_LO[i] + WS_EDGE_MARGIN and vel[i] < 0:
+            vel[i] = 0.0
+        elif ee_pos[i] >= WS_HI[i] - WS_EDGE_MARGIN and vel[i] > 0:
+            vel[i] = 0.0
+    return vel
 
 
 # ── WebSocket handler ────────────────────────────────────────────────────
@@ -130,12 +147,16 @@ async def phone_handler(websocket, state: TeleopState):
             if msg_type == "imu":
                 quat = np.array(msg["quaternion"], dtype=np.float64)
                 grasp = bool(msg.get("grasp", False))
-                state.update(quat, grasp, DT)
+                state.update(quat, grasp)
 
             elif msg_type == "recalibrate":
                 # Next IMU message will set a new reference.
                 state.ref_rot = None
                 print("[ws] Recalibrate requested")
+
+            elif msg_type == "home":
+                state.request_home()
+                print("[ws] Home requested")
 
     except websockets.exceptions.ConnectionClosed:
         pass
@@ -155,16 +176,17 @@ async def main(use_viewer: bool = True):
 
     physics = env.unwrapped.dm_control_env._physics
 
-    # Initialise EE target at current gripperframe position.
+    # Resolve EE site id once.
     import mujoco as mj
     site_id = mj.mj_name2id(
         physics.model._model,
         mj.mjtObj.mjOBJ_SITE.value,
         "gripperframe",
     )
-    initial_ee = physics.data.site_xpos[site_id].copy()
-    state = TeleopState(initial_ee)
 
+    state = TeleopState()
+
+    initial_ee = physics.data.site_xpos[site_id].copy()
     print(f"[server] Initial EE position: {initial_ee}")
     print(f"[server] Starting WebSocket server on ws://{WS_HOST}:{WS_PORT}")
 
@@ -187,9 +209,32 @@ async def main(use_viewer: bool = True):
         while True:
             loop_start = time.monotonic()
 
-            # Compute IK toward the current target.
+            # Handle home reset.
+            if state.home_requested:
+                state.home_requested = False
+                obs, _ = env.reset()
+                if use_viewer:
+                    env.unwrapped.render_to_window()
+                # Recalibrate phone reference on next IMU message.
+                state.ref_rot = None
+                state.ee_velocity = np.zeros(3)
+                print("[server] Environment reset (home)")
+                # Skip this control step.
+                elapsed = time.monotonic() - loop_start
+                sleep_time = DT - elapsed
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+                continue
+
+            # Get current EE position for workspace edge clamping.
+            ee_pos = physics.data.site_xpos[site_id].copy()
+
+            # Clamp velocity at workspace edges.
+            clamped_vel = _clamp_velocity_at_edges(ee_pos, state.ee_velocity)
+
+            # Compute velocity IK.
             gripper_cmd = GRIPPER_CLOSED if state.grasp else GRIPPER_OPEN
-            action = solve_ik(physics, state.ee_target, gripper_cmd)
+            action = solve_velocity_ik(physics, clamped_vel, gripper_cmd)
 
             # Step simulation.
             obs, reward, terminated, truncated, info = env.step(action)

@@ -42,7 +42,8 @@ export default function App() {
   const [serverIp, setServerIp] = useState("10.1.3.191");
   const [connected, setConnected] = useState(false);
   const [grasp, setGrasp] = useState(false);
-  const [eePos, setEePos] = useState<number[] | null>(null);
+  const [quaternion, setQuaternion] = useState<number[] | null>(null);
+  const [rotation, setRotation] = useState<number[] | null>(null);
   const [sensorActive, setSensorActive] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -66,14 +67,7 @@ export default function App() {
       setConnected(true);
     };
 
-    ws.onmessage = (evt) => {
-      try {
-        const msg = JSON.parse(evt.data);
-        if (msg.type === "state" && msg.ee_pos) {
-          setEePos(msg.ee_pos);
-        }
-      } catch {}
-    };
+    ws.onmessage = () => {};
 
     ws.onerror = (e) => console.log("WS error", e);
 
@@ -106,6 +100,8 @@ export default function App() {
       if (!rot || wsRef.current?.readyState !== WebSocket.OPEN) return;
 
       const quat = eulerToQuat(rot.alpha, rot.beta, rot.gamma);
+      setQuaternion(quat);
+      setRotation([rot.alpha, rot.beta, rot.gamma]);
 
       const payload = JSON.stringify({
         type: "imu",
@@ -128,10 +124,18 @@ export default function App() {
     }
   }, []);
 
+  // ── Home ──────────────────────────────────────────────────────────
+
+  const home = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "home" }));
+    }
+  }, []);
+
   // ── UI ─────────────────────────────────────────────────────────────
 
-  const fmtPos = (pos: number[] | null) =>
-    pos ? pos.map((v) => v.toFixed(3)).join(", ") : "—";
+  const fmt = (arr: number[] | null) =>
+    arr ? arr.map((v) => v.toFixed(3)).join(", ") : "—";
 
   return (
     <SafeAreaView style={styles.root}>
@@ -182,10 +186,14 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* ── EE Position readout ────────────────────────────────── */}
+      {/* ── Sensor readouts ─────────────────────────────────────── */}
       <View style={styles.infoBox}>
-        <Text style={styles.infoLabel}>EE Position</Text>
-        <Text style={styles.infoValue}>{fmtPos(eePos)}</Text>
+        <Text style={styles.infoLabel}>Quaternion (w, x, y, z)</Text>
+        <Text style={styles.infoValue}>{fmt(quaternion)}</Text>
+      </View>
+      <View style={styles.infoBox}>
+        <Text style={styles.infoLabel}>Rotation (α, β, γ)</Text>
+        <Text style={styles.infoValue}>{fmt(rotation)}</Text>
       </View>
 
       {/* ── Recalibrate ────────────────────────────────────────── */}
@@ -195,6 +203,15 @@ export default function App() {
         disabled={!connected}
       >
         <Text style={styles.btnText}>Recalibrate</Text>
+      </TouchableOpacity>
+
+      {/* ── Home ────────────────────────────────────────────────── */}
+      <TouchableOpacity
+        style={styles.homeBtn}
+        onPress={home}
+        disabled={!connected}
+      >
+        <Text style={styles.btnText}>Home</Text>
       </TouchableOpacity>
 
       {/* ── GRASP button (fills bottom half) ───────────────────── */}
@@ -293,6 +310,14 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 12,
     backgroundColor: "#e65100",
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  homeBtn: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    backgroundColor: "#37474f",
     borderRadius: 8,
     paddingVertical: 14,
     alignItems: "center",
