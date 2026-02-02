@@ -8,8 +8,6 @@ dependencies = [
     "dm-control>=1.0.34",
     "gymnasium==0.29.1",
     "mujoco>=3.3.7",
-    "pufferlib==3.0.0",
-    "gym==0.23",
     "websockets>=12.0",
     "scipy>=1.11.0",
 ]

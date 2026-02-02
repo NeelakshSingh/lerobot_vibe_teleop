@@ -27,7 +27,7 @@ class LeRobot(Env):
         self.dm_control_env = control.Environment(
             dm_control_physics,
             self.dm_control_task,
-            n_sub_steps=20
+            n_sub_steps=5
         )
 
         # ~ Init gym-required space variables

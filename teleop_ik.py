@@ -1,13 +1,13 @@
 """
-Jacobian-based IK solver for the SO-101 arm.
+Jacobian-based velocity IK solver for the SO-101 arm.
 
-Computes joint-position targets that move the gripperframe site toward
-a desired Cartesian end-effector position using damped least-squares.
-Returns a 6-element action array (5 arm joint targets in radians + 1
-gripper target in radians) that can be passed directly to env.step().
+Computes joint velocities that move the gripperframe site at a desired
+Cartesian end-effector velocity using damped least-squares on the Jacobian.
+Returns a 6-element action array (5 arm joint velocities in rad/s + 1
+gripper position target in radians) that can be passed directly to env.step().
 
-The actuators are position-controlled; MuJoCo clamps ctrl values to
-each actuator's ctrlrange automatically.
+The arm actuators are velocity-controlled; the gripper is position-controlled.
+MuJoCo clamps ctrl values to each actuator's ctrlrange automatically.
 """
 
 import numpy as np
@@ -23,15 +23,15 @@ ARM_JOINT_NAMES = [
 ]
 
 # Damped least-squares damping factor.
-DAMPING = 0.05
+DAMPING = 0.01
 
-# Maximum joint-position step per IK call (radians).
-MAX_JOINT_STEP = 0.15
+# Maximum joint velocity (rad/s).
+MAX_JOINT_VEL = 2.5
 
 
-def solve_ik(
+def solve_velocity_ik(
     physics,
-    target_pos: np.ndarray,
+    ee_velocity: np.ndarray,
     gripper_action: float = 0.0,
 ) -> np.ndarray:
     """Return a 6-element action array for ``env.step()``.
@@ -40,19 +40,17 @@ def solve_ik(
     ----------
     physics : dm_control Physics instance
         Access to model/data for the current simulation state.
-    target_pos : (3,) ndarray
-        Desired Cartesian position for the gripperframe site.
+    ee_velocity : (3,) ndarray
+        Desired Cartesian velocity for the gripperframe site (m/s).
     gripper_action : float
-        Gripper command in radians.  ~1.7 = fully open, ~-0.17 = closed.
+        Gripper position command in radians.  ~1.7 = fully open, ~-0.17 = closed.
 
     Returns
     -------
-    action : (6,) ndarray — joint-position targets in radians.
+    action : (6,) ndarray — [joint_vel_1..5, gripper_position].
     """
     model = physics.model._model
-    data_wrapper = physics.data
-    # Raw MjData needed for mj_jacSite; the wrapper is used for array access.
-    data_raw = data_wrapper._data
+    data_raw = physics.data._data
 
     # ---- resolve indices ------------------------------------------------
     site_id = mujoco.mj_name2id(
@@ -63,14 +61,7 @@ def solve_ik(
         for n in ARM_JOINT_NAMES
     ]
     arm_dof_ids = [model.jnt_dofadr[jid] for jid in arm_joint_ids]
-    arm_qpos_ids = [model.jnt_qposadr[jid] for jid in arm_joint_ids]
     n_arm = len(arm_dof_ids)
-
-    # ---- current EE position -------------------------------------------
-    ee_pos = data_wrapper.site_xpos[site_id].copy()  # (3,)
-
-    # ---- positional error ----------------------------------------------
-    err = target_pos - ee_pos  # (3,)
 
     # ---- Jacobian at gripperframe (full 3×nv) --------------------------
     jacp_full = np.zeros((3, model.nv), dtype=np.float64)
@@ -80,22 +71,18 @@ def solve_ik(
     # Extract columns for the arm DOFs only.
     J = jacp_full[:, arm_dof_ids]  # (3, n_arm)
 
-    # ---- damped least-squares ------------------------------------------
+    # ---- damped least-squares: joint_vel = J^+ * ee_velocity -----------
     JtJ = J.T @ J + (DAMPING ** 2) * np.eye(n_arm)
-    dq = np.linalg.solve(JtJ, J.T @ err)  # (n_arm,)
+    dq = np.linalg.solve(JtJ, J.T @ ee_velocity)  # (n_arm,)
 
-    # Clamp step magnitude.
+    # Clamp joint velocities.
     max_abs = np.abs(dq).max()
-    if max_abs > MAX_JOINT_STEP:
-        dq *= MAX_JOINT_STEP / max_abs
+    if max_abs > MAX_JOINT_VEL:
+        dq *= MAX_JOINT_VEL / max_abs
 
-    # ---- new joint targets (position-controlled actuators) --------------
-    q_current = np.array([data_wrapper.qpos[i] for i in arm_qpos_ids])
-    q_target = q_current + dq
-
-    # Build full 6-DOF action: 5 arm joints + gripper.
+    # Build full 6-DOF action: 5 arm joint velocities + gripper position.
     action = np.zeros(6, dtype=np.float64)
-    action[:5] = q_target
+    action[:5] = dq
     action[5] = gripper_action
 
     return action
