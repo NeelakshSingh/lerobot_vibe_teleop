@@ -1,4 +1,0 @@
-{"env_id": "LeRobot-v0", "backend": "gym", "num_envs": 2, "num_workers": 2, "steps_per_second": 31453.842016433}
-{"env_id": "LeRobot-v0", "backend": "gym", "num_envs": 4, "num_workers": 4, "steps_per_second": 26331.242254379584}
-{"env_id": "LeRobot-v0", "backend": "gym", "num_envs": 8, "num_workers": 4, "steps_per_second": 3582.2543965558666}
-{"env_id": "LeRobot-v0", "backend": "gym", "num_envs": 16, "num_workers": 4, "steps_per_second": 6635.078210963214}

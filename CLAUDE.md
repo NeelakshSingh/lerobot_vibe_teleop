@@ -4,7 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LeRobotHackathonEnv is a minimal, extendable gym environment for robotic manipulation built on MuJoCo/dm_control. It provides gymnasium-compatible environments for training RL agents on tabletop manipulation tasks with the SO-101 robot arm.
+**Branch: lerobot_phone_teleop**
+
+This branch focuses on phone-based teleoperation and data collection for the SO101 robot arm. The system receives pose estimates from smartphone sensors (IMU, gyroscope, accelerometer) via TCP and maps phone movements to robot end-effector velocities in simulation.
+
+**Supported devices:** iPhone 13, Pixel 8a
+
+**Core concept:** Velocity mirroring - phone velocities are directly mapped to robot end-effector velocities:
+- Phone linear velocities → end-effector linear velocities in base link frame
+- Phone angular velocities → end-effector angular velocities in end-effector frame
+- Gripper controlled via slider value from phone UI
+
+The initial pose when a session starts defines the "home" relative state for both phone and robot.
 
 ## Common Commands
 
@@ -23,61 +34,97 @@ uv run tests/mj_viewer_rendering.py
 
 # Interactive MuJoCo viewer (macOS - requires special binary)
 uv run mjpython tests/mj_viewer_rendering.py
-
-# Throughput benchmarking
-uv run python -m tests.vec_env_throughput --backend gym --sweep-num-envs 2,4,8,16,32
-uv run python -m tests.vec_env_throughput --backend puffer --sweep-num-envs 2,4,8,16,32 --puffer-num-workers 8
 ```
 
 ## Architecture
 
+### Phone Teleoperation Data Flow
+
+```
+Phone (state estimation) → TCP → Teleoperation Server → IK Solver → Robot Simulation → Data Storage
+```
+
+**Data received from phone (TCP):**
+- Position (world frame)
+- Velocity (world frame)
+- Quaternion orientation
+- Angular velocity (body frame)
+- Gripper slider value (0-1)
+
+**Note:** Phone state estimation scripts are in separate branches (not yet available).
+
+### SO101 Robot Configuration
+
+**Joint chain (6-DOF arm + gripper):**
+| Joint | Type | Range (rad) |
+|-------|------|-------------|
+| shoulder_pan | hinge | -1.92 to 1.92 |
+| shoulder_lift | hinge | -1.75 to 1.75 |
+| elbow_flex | hinge | -1.69 to 1.69 |
+| wrist_flex | hinge | -1.66 to 1.66 |
+| wrist_roll | hinge | -2.74 to 2.84 |
+| gripper | hinge | -0.17 to 1.75 |
+
+**End-effector site:** `gripperframe` - used for IK target and position sensing
+
+**Actuators:** Position-controlled STS3215 servos with force limits ±3.35 N
+
+### Camera Configuration
+
+Cameras defined in `src/lerobothackathonenv/models/xml/arenas/table_arena.xml`:
+- `frontview` - pos=(1.6, 0, 1.45) - main front-facing view
+- `birdview` - pos=(-0.2, 0, 3.0) - top-down view
+- `agentview` - pos=(0.5, 0, 1.35) - agent perspective
+- `sideview` - pos=(-0.056, 1.276, 1.488) - side perspective
+
+Additional camera in main scene (`so101_tabletop_manipulation.xml`):
+- `front` - pos=(0.9, 0, 1.2) - targets robot base
+
+Rendering uses `dm_control.physics.render(camera_id=...)` with default size 256x256.
+
+### Data Collection
+
+Data is stored in **LeRobot dataset format**. Each episode should include:
+- Camera images (from MuJoCo render)
+- Joint positions (qpos)
+- Joint velocities (qvel)
+- End-effector pose
+- Actions (target joint positions)
+- Timestamps
+
 ### Core Components
 
 **Environment (`src/lerobothackathonenv/env.py`)**
-- `LeRobot(Env)`: Main gymnasium environment class wrapping dm_control physics
-- Key methods: `step()`, `reset()`, `render()`, `render_to_window()`
-- `sim_state` property: Returns `MujocoState` for trajectory recording/dataset creation
+- `LeRobot(Env)`: Gymnasium environment wrapping dm_control
+- `render()`: Returns numpy array from specified camera
+- `sim_state` property: Returns `MujocoState` for trajectory recording
 
 **Task System (`src/lerobothackathonenv/tasks.py`)**
-- `ExtendedTask`: Abstract base class defining environment variations
-- Each task specifies: `XML_PATH`, `ACTION_SPACE`, `OBSERVATION_SPACE`
-- Required methods: `get_reward()`, `get_observation()`, `get_sim_metadata()`
-- Optional: `get_success()` for task completion detection
+- `ExtendedTask`: Base class for environment variations
+- Defines `XML_PATH`, `ACTION_SPACE`, `OBSERVATION_SPACE`
+- `get_observation(physics)`: Extracts robot state
 
-**Concrete Tasks:**
-- `ExampleTask`: Base task with common observation extraction (qpos, qvel, actuator_force, gripper_pos)
-- `ExampleReachTask`: Gripper reaches target position (Gaussian reward)
-- `GoalConditionedObjectPlaceTask`: Pick-and-place with 3 manipulatable objects (milk_0, bread_1, cereal_2), goal-conditioned learning, reward shaping, and randomized spawning
+**State Recording (`src/lerobothackathonenv/structs.py`)**
+- `MujocoState`: Dataclass with qpos, qvel, xpos, xquat, mocap_pos, mocap_quat
 
-**Registered Environments:**
-- `LeRobot-v0`: Default reach task
-- `LeRobotGoalConditioned-v0`: Goal-conditioned pick-and-place
+### Key Implementation Requirements
 
-### Creating New Tasks
+1. **TCP Server**: Receive pose data from phone
+2. **Velocity Mapping**: Transform phone velocities to end-effector frame
+3. **Inverse Kinematics**: Compute joint velocities/positions from EE velocity commands
+4. **Data Recording**: Store episodes in LeRobot format with camera images
+5. **Session Management**: Handle connection establishment, home pose calibration
 
-Subclass `ExtendedTask` and define:
-1. `XML_PATH`: Path to MuJoCo scene XML
-2. `ACTION_SPACE` / `OBSERVATION_SPACE`: Gymnasium spaces
-3. `get_reward(physics)`: Reward function using dm_control physics
-4. `get_observation(physics)`: Observation function
-5. `get_sim_metadata()`: Episode metadata for trajectory recording
+### Physics Access Patterns
 
-Register with `gymnasium.register()` in `__init__.py`.
+```python
+# Get end-effector position
+gripper_site_id = mujoco.mj_name2id(physics.model._model, mujoco.mjtObj.mjOBJ_SITE.value, "gripperframe")
+ee_pos = physics.data.site_xpos[gripper_site_id]
 
-### Physics Assets
+# Joint positions/velocities
+qpos = physics.data.qpos  # shape (27,) - includes free joints of objects
+qvel = physics.data.qvel  # shape (24,)
 
-`src/lerobothackathonenv/models/` contains:
-- `xml/`: MuJoCo scene descriptions and component includes
-- `meshes/`: 3D geometry (STL) for robots (fr3, leap, SO-101)
-- `textures/`: Visual textures
-
-### Vectorization
-
-Supports both Gymnasium `AsyncVectorEnv` (~28k steps/s) and PufferLib multiprocessing (~60k steps/s at 16 envs, 8 workers).
-
-## Key Patterns
-
-- Physics accessed via `physics.data` (positions, velocities) and `physics.model` (model parameters)
-- Site/body IDs retrieved with `mujoco.mj_name2id()`
-- Observations clipped to defined ranges before returning
-- `initialize_episode()` in tasks handles per-episode randomization (goal sampling, object placement)
+# Robot joint indices: 0-5 for arm, 6 for gripper (after base)
+```
