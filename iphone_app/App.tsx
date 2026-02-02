@@ -39,7 +39,7 @@ function eulerToQuat(
 // ── App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [serverIp, setServerIp] = useState("192.168.1.100");
+  const [serverIp, setServerIp] = useState("10.1.3.191");
   const [connected, setConnected] = useState(false);
   const [grasp, setGrasp] = useState(false);
   const [eePos, setEePos] = useState<number[] | null>(null);
