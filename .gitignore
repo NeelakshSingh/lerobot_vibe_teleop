@@ -211,3 +211,7 @@ __marimo__/
 
 #
 AGENT.md
+
+# Expo / React Native
+iphone_app/node_modules/
+iphone_app/.expo/
