@@ -34,7 +34,61 @@ uv run tests/mj_viewer_rendering.py
 
 # Interactive MuJoCo viewer (macOS - requires special binary)
 uv run mjpython tests/mj_viewer_rendering.py
+
+# Run teleoperation script (test mode with hardcoded velocities)
+uv run python -m lerobot_phone_teleop.scripts.teleoperate --test
+
+# Run recording script (test mode)
+uv run python -m lerobot_phone_teleop.scripts.record --test
 ```
+
+## Development Rules
+
+### Testing After Every Edit
+
+**CRITICAL:** After making any code changes, always run the main scripts to verify they execute without errors:
+
+```bash
+# Test teleoperation script
+uv run python -m lerobot_phone_teleop.scripts.teleoperate --test
+
+# Test recording script
+uv run python -m lerobot_phone_teleop.scripts.record --test
+```
+
+The `--test` flag enables test mode which:
+- Bypasses TCP connection requirement
+- Uses hardcoded velocity values for end-effector control
+- Runs a short episode (100 steps) to verify functionality
+- Skips dataset upload/push operations
+
+### Code Style (following lerobot conventions)
+
+1. **Script organization**: Main scripts go in `src/lerobot_phone_teleop/scripts/` with entry points like `teleoperate.py`, `record.py`
+
+2. **Configuration**: Use dataclasses with `@dataclass` decorator for configs:
+   ```python
+   @dataclass
+   class TeleoperationConfig:
+       tcp_host: str = "0.0.0.0"
+       tcp_port: int = 5555
+       test_mode: bool = False
+       fps: int = 30
+   ```
+
+3. **Feature naming**: Follow lerobot's `observation.images.<camera_name>`, `observation.state`, `action` convention
+
+4. **Type hints**: All functions must have type hints
+
+5. **Docstrings**: Use Google-style docstrings for public functions
+
+6. **Test mode pattern**: All main scripts must support `--test` flag that uses mock/hardcoded data:
+   ```python
+   def get_phone_data(config: TeleoperationConfig) -> PhoneState:
+       if config.test_mode:
+           return _get_hardcoded_test_data()
+       return _receive_from_tcp()
+   ```
 
 ## Architecture
 
