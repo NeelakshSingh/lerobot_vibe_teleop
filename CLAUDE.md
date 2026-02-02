@@ -148,6 +148,13 @@ Data is stored in **LeRobot dataset format**. Each episode should include:
 
 ### Core Components
 
+**Phone Teleoperation Package (`src/lerobot_phone_teleop/`)**
+- `config.py`: Dataclass configs (RobotConfig, TeleoperationConfig, RecordingConfig, PhoneState)
+- `ik_solver.py`: Velocity-based IK using damped least squares Jacobian pseudo-inverse
+- `controller.py`: TeleoperationController maps phone velocities to joint commands
+- `scripts/teleoperate.py`: Main teleoperation loop with `--test` flag
+- `scripts/record.py`: Data recording in LeRobot format with `--test` flag
+
 **Environment (`src/lerobothackathonenv/env.py`)**
 - `LeRobot(Env)`: Gymnasium environment wrapping dm_control
 - `render()`: Returns numpy array from specified camera
@@ -161,13 +168,19 @@ Data is stored in **LeRobot dataset format**. Each episode should include:
 **State Recording (`src/lerobothackathonenv/structs.py`)**
 - `MujocoState`: Dataclass with qpos, qvel, xpos, xquat, mocap_pos, mocap_quat
 
-### Key Implementation Requirements
+### Implementation Status
 
-1. **TCP Server**: Receive pose data from phone
-2. **Velocity Mapping**: Transform phone velocities to end-effector frame
-3. **Inverse Kinematics**: Compute joint velocities/positions from EE velocity commands
-4. **Data Recording**: Store episodes in LeRobot format with camera images
-5. **Session Management**: Handle connection establishment, home pose calibration
+| Component | Status | Notes |
+|-----------|--------|-------|
+| IK Solver | ✅ Done | Damped least squares, velocity-based |
+| Teleoperation Controller | ✅ Done | Velocity mapping, gripper control |
+| teleoperate.py | ✅ Done | Test mode with hardcoded velocities |
+| record.py | ✅ Done | LeRobot format output |
+| TCP Server | ❌ TODO | Pending phone-side implementation |
+
+### Key Implementation Requirements (Remaining)
+
+1. **TCP Server**: Receive pose data from phone (blocked on phone-side code)
 
 ### Physics Access Patterns
 

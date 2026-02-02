@@ -211,3 +211,9 @@ __marimo__/
 
 #
 AGENT.md
+
+# Claude Code local settings
+.claude/
+
+# Recorded datasets
+data/
